@@ -43,4 +43,4 @@ class KEAFacility extends BaseFacility {
   }
 }
 
-module.exports = MQTTFacility
+module.exports = KEAFacility
