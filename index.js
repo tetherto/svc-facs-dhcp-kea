@@ -34,10 +34,10 @@ class KEAFacility extends BaseFacility {
         try {
           const res = await this.sendCommand(command, service, val)
           // responses[index] = res
-          if (res.data.result === 0) {
-            responses.success.push({ index, res: res.data })
+          if (res.data[0].result === 0) {
+            responses.success.push({ index, res: res.data[0] })
           } else {
-            responses.error.push({ index, res: res.data })
+            responses.error.push({ index, res: res.data[0] })
           }
         } catch (error) {
           console.error(error)
