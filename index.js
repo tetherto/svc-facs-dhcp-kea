@@ -69,7 +69,7 @@ class KEAFacility extends BaseFacility {
 
   async getLeases () {
     const res = await this._lease4GetAll()
-    return res.map((val) => ({ mac: val['hw-address'], ip: val['ip-address'] }))
+    return res.map((val) => ({ mac: val['hw-address'], ip: val['ip-address'], subnetId: val['subnet-id'] }))
   }
 
   async setLeases (leases) {
