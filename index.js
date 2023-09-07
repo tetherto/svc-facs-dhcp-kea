@@ -10,7 +10,6 @@ class KEAFacility extends BaseFacility {
     super(caller, opts, ctx)
     this.name = 'kea'
     this._hasConf = true
-    this.subnets = opts.subnets
     super.init()
   }
 
@@ -88,7 +87,7 @@ class KEAFacility extends BaseFacility {
   }
 
   async getSubnetId (subnet) {
-    const subnetObj = this.subnets.find((val) => val.subnet === subnet)
+    const subnetObj = this.conf.subnets.find((val) => val.subnet === subnet)
     if (subnetObj) {
       return subnetObj.id
     }
@@ -97,7 +96,7 @@ class KEAFacility extends BaseFacility {
 
   async getAvailableIp (subnetId) {
     const leases = await this.getLeases()
-    const subnet = this.subnets.find((val) => val.id === subnetId)
+    const subnet = this.conf.subnets.find((val) => val.id === subnetId)
     if (!subnet) {
       throw new Error('Invalid subnetId')
     }
