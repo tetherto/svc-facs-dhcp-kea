@@ -10,6 +10,7 @@ class KEAFacility extends BaseFacility {
     super(caller, opts, ctx)
     this.name = 'kea'
     this._hasConf = true
+    this.leases = []
     super.init()
   }
 
@@ -67,9 +68,13 @@ class KEAFacility extends BaseFacility {
     }
   }
 
-  async getLeases () {
+  async fetchLeases () {
     const res = await this._lease4GetAll()
-    return res.map((val) => ({ mac: val['hw-address'], ip: val['ip-address'], subnetId: val['subnet-id'] }))
+    this.leases = res.map((val) => ({ mac: val['hw-address'], ip: val['ip-address'], subnetId: val['subnet-id'] }))
+  }
+
+  async getLeases () {
+    return this.leases
   }
 
   async setLeases (leases) {
