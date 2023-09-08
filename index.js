@@ -11,6 +11,7 @@ class KEAFacility extends BaseFacility {
     this._hasConf = true
     this.leases = []
     super.init()
+    this.loadConf()
   }
 
   sendCommand (command, service, args = undefined) {
@@ -22,6 +23,11 @@ class KEAFacility extends BaseFacility {
       body.arguments = args
     }
     return axios.post(this.conf.url, body)
+  }
+
+  async loadConf () {
+    this.serverConf = (await this.sendCommand('config-get', ['dhcp4'])).data[0].arguments.Dhcp4
+    this.subnets = this.serverConf.subnet4
   }
 
   async sendMultipleCommands (command, service, args, maxParallel = 10) {
@@ -95,7 +101,7 @@ class KEAFacility extends BaseFacility {
   }
 
   async getSubnetId (subnet) {
-    const subnetObj = this.conf.subnets.find((val) => val.subnet === subnet)
+    const subnetObj = this.subnets.find((val) => val.subnet === subnet)
     if (subnetObj) {
       return subnetObj.id
     }
@@ -104,7 +110,7 @@ class KEAFacility extends BaseFacility {
 
   async getAvailableIp (subnetId) {
     const leases = await this.getLeases()
-    const subnet = this.conf.subnets.find((val) => val.id === subnetId)
+    const subnet = this.subnets.find((val) => val.id === subnetId)
     if (!subnet) {
       throw new Error('Invalid subnetId')
     }
@@ -113,7 +119,7 @@ class KEAFacility extends BaseFacility {
     const allocatedIps = leasesInSubnet.map((val) => val.ip)
     allocatedIps.push(subnet.subnet.split('/')[0])
 
-    const ipRange = this.getIpsInSubnet(subnet.subnet)
+    const ipRange = this.getIpsInSubnet(subnet.subnet, subnet.pools)
     const availableIps = ipRange.filter((val) => !allocatedIps.includes(val))
 
     if (availableIps.length === 0) {
@@ -123,7 +129,7 @@ class KEAFacility extends BaseFacility {
     return availableIps[0]
   }
 
-  getIpsInSubnet (subnetCIDR) {
+  getIpsInSubnet (subnetCIDR, pools) {
     const [subnet, prefixLength] = subnetCIDR.split('/')
 
     const ipParts = subnet.split('.').map(Number)
@@ -143,9 +149,34 @@ class KEAFacility extends BaseFacility {
         (numericIP >>> 8) & 255,
         numericIP & 255
       ].join('.')
+      if (pools.length > 0 && !this.isIpInPools(ipAddress, pools)) {
+        continue
+      }
       usableIPs.push(ipAddress)
     }
     return usableIPs
+  }
+
+  isIpInPools (ip, pools) {
+    for (let i = 0; i < pools.length; i++) {
+      if (this.isIpInPool(ip, pools[i].pool)) return true
+    }
+    return false
+  }
+
+  isIpInPool (ip, pool) {
+    const [startIP, endIP] = pool.split('-')
+
+    const startIPArray = startIP.split('.').map(Number)
+    const endIPArray = endIP.split('.').map(Number)
+    const ipArray = ip.split('.').map(Number)
+
+    for (let i = 0; i < 4; i++) {
+      if (ipArray[i] < startIPArray[i] || ipArray[i] > endIPArray[i]) {
+        return false
+      }
+    }
+    return true
   }
 }
 
