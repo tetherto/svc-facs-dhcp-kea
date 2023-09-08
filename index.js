@@ -3,7 +3,6 @@
 const BaseFacility = require('bfx-facs-base')
 const axios = require('axios').default
 const async = require('async')
-const getIpRange = require('get-ip-range')
 
 class KEAFacility extends BaseFacility {
   constructor (caller, opts, ctx) {
@@ -114,7 +113,7 @@ class KEAFacility extends BaseFacility {
     const allocatedIps = leasesInSubnet.map((val) => val.ip)
     allocatedIps.push(subnet.subnet.split('/')[0])
 
-    const ipRange = getIpRange.getIPRange(subnet.subnet)
+    const ipRange = this.getIpsInSubnet(subnet.subnet)
     const availableIps = ipRange.filter((val) => !allocatedIps.includes(val))
 
     if (availableIps.length === 0) {
@@ -122,6 +121,31 @@ class KEAFacility extends BaseFacility {
     }
 
     return availableIps[0]
+  }
+
+  getIpsInSubnet (subnetCIDR) {
+    const [subnet, prefixLength] = subnetCIDR.split('/')
+
+    const ipParts = subnet.split('.').map(Number)
+    const prefix = parseInt(prefixLength, 10)
+
+    const subnetNumeric = (ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3]
+
+    const numAddresses = 2 ** (32 - prefix)
+    const networkNumeric = subnetNumeric & ((2 ** 32 - 1) << (32 - prefix))
+
+    const usableIPs = []
+    for (let i = 2; i < numAddresses - 2; i++) {
+      const numericIP = networkNumeric + i
+      const ipAddress = [
+        (numericIP >>> 24) & 255,
+        (numericIP >>> 16) & 255,
+        (numericIP >>> 8) & 255,
+        numericIP & 255
+      ].join('.')
+      usableIPs.push(ipAddress)
+    }
+    return usableIPs
   }
 }
 
