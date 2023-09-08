@@ -34,9 +34,8 @@ class KEAFacility extends BaseFacility {
       return async () => {
         try {
           const res = await this.sendCommand(command, service, val)
-          // responses[index] = res
           if (res.data[0].result === 0) {
-            responses.success.push({ index, res: res.data[0] })
+            responses.success.push({ index, res: res.data[0], val })
           } else {
             responses.error.push({ index, res: res.data[0] })
           }
@@ -78,17 +77,22 @@ class KEAFacility extends BaseFacility {
   }
 
   async setLeases (leases) {
-    // take array of ip,mac objects and set, error on conflict, etc.
-    // figure if we need to hot reload the server or automatic, etc.
-    const args = leases.map(lease => ({ 'ip-address': lease.ip, 'hw-address': lease.mac, 'valid-lft': 999999999 }))
-    return await this.sendMultipleCommands('lease4-add', ['dhcp4'], args)
+    const args = leases.map(lease => ({ 'ip-address': lease.ip, 'hw-address': lease.mac, 'subnet-id': lease.subnetId }))
+    const response = await this.sendMultipleCommands('lease4-add', ['dhcp4'], args)
+    response.success.forEach((res) => {
+      const val = res.val
+      this.leases.push({ mac: val['hw-address'], ip: val['ip-address'], subnetId: val['subnet-id'] })
+    })
+    return response
   }
 
   async freeLeases (leases) {
-    // take array of ip,mac objects and free, error on conflict, etc.
-    // figure if we need to hot reload the server or automatic, etc.
     const args = leases.map(lease => ({ 'ip-address': lease.ip, 'hw-address': lease.mac }))
-    return await this.sendMultipleCommands('lease4-del', ['dhcp4'], args)
+    const response = await this.sendMultipleCommands('lease4-del', ['dhcp4'], args)
+    response.success.forEach((res) => {
+      const val = res.val
+      this.leases = this.leases.filter((lease) => !(lease.mac === val['hw-address'] && lease.ip === val['ip-address']))
+    })
   }
 
   async getSubnetId (subnet) {
