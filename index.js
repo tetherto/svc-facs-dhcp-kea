@@ -11,7 +11,7 @@ class KEAFacility extends BaseFacility {
     this._hasConf = true
     this.leases = []
     super.init()
-    this.loadConf()
+    this.fetchConf()
   }
 
   sendCommand (command, service, args = undefined) {
@@ -25,7 +25,7 @@ class KEAFacility extends BaseFacility {
     return axios.post(this.conf.url, body)
   }
 
-  async loadConf () {
+  async fetchConf () {
     this.serverConf = (await this.sendCommand('config-get', ['dhcp4'])).data[0].arguments.Dhcp4
     this.subnets = this.serverConf.subnet4
   }
