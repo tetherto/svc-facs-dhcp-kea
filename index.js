@@ -57,6 +57,11 @@ class KEAFacility extends BaseFacility {
   async _lease4GetAll () {
     try {
       const res = await this.sendCommand('lease4-get-all', ['dhcp4'])
+
+      if (!res.data[0].arguments) {
+        return res.data[0].text
+      }
+
       return res.data[0].arguments.leases
     } catch (error) {
       console.error(error)
