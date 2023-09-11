@@ -61,6 +61,11 @@ class KEAFacility extends BaseFacility {
   async _lease4GetAll () {
     try {
       const res = await this.sendCommand('lease4-get-all', ['dhcp4'])
+
+      if (!res.data[0].arguments) {
+        return res.data[0].text
+      }
+
       return res.data[0].arguments.leases
     } catch (error) {
       console.error(error)
@@ -168,11 +173,6 @@ class KEAFacility extends BaseFacility {
     return false
   }
 
-  /**
-   * @param {*} ip  @example '10.10.0.23'
-   * @param {*} pool @example '10.182.0.11-10.182.0.15'
-   * @returns bool if ip in the pool range
-   */
   isIpInPool (ip, pool) {
     const [startIP, endIP] = pool.split('-')
 
