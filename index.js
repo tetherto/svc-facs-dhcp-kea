@@ -14,7 +14,7 @@ class KEAFacility extends BaseFacility {
 
   setNetFac (netFac) {
     this.netFac = netFac
-    this.loadConf()
+    this.fetchConf()
   }
 
   async sendCommand (command, service, args = undefined) {
@@ -29,7 +29,7 @@ class KEAFacility extends BaseFacility {
     return { data: data.body }
   }
 
-  async loadConf () {
+  async fetchConf () {
     this.serverConf = (await this.sendCommand('config-get', ['dhcp4'])).data[0].arguments.Dhcp4
     this.subnets = this.serverConf.subnet4
   }
