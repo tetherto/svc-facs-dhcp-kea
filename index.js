@@ -1,7 +1,6 @@
 'use strict'
 
 const BaseFacility = require('bfx-facs-base')
-const axios = require('axios').default
 const async = require('async')
 
 class KEAFacility extends BaseFacility {
@@ -11,10 +10,14 @@ class KEAFacility extends BaseFacility {
     this._hasConf = true
     this.leases = []
     super.init()
+  }
+
+  setNetFac (netFac) {
+    this.netFac = netFac
     this.loadConf()
   }
 
-  sendCommand (command, service, args = undefined) {
+  async sendCommand (command, service, args = undefined) {
     const body = {
       command,
       service
@@ -22,7 +25,8 @@ class KEAFacility extends BaseFacility {
     if (args) {
       body.arguments = args
     }
-    return axios.post(this.conf.url, body)
+    const data = await this.netFac.post(this.conf.url, { body, encoding: 'json' })
+    return { data: data.body }
   }
 
   async loadConf () {
@@ -164,6 +168,11 @@ class KEAFacility extends BaseFacility {
     return false
   }
 
+  /**
+   * @param {*} ip  @example '10.10.0.23'
+   * @param {*} pool @example '10.182.0.11-10.182.0.15'
+   * @returns bool if ip in the pool range
+   */
   isIpInPool (ip, pool) {
     const [startIP, endIP] = pool.split('-')
 
