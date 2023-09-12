@@ -1,7 +1,6 @@
 'use strict'
 
 const BaseFacility = require('bfx-facs-base')
-const axios = require('axios').default
 const async = require('async')
 
 class KEAFacility extends BaseFacility {
@@ -11,10 +10,14 @@ class KEAFacility extends BaseFacility {
     this._hasConf = true
     this.leases = []
     super.init()
-    this.fetchServerConf()
   }
 
-  sendCommand (command, service, args = undefined) {
+  setNetFac (netFac) {
+    this.netFac = netFac
+    this.fetchConf()
+  }
+
+  async sendCommand (command, service, args = undefined) {
     const body = {
       command,
       service
@@ -22,10 +25,11 @@ class KEAFacility extends BaseFacility {
     if (args) {
       body.arguments = args
     }
-    return axios.post(this.conf.url, body)
+    const data = await this.netFac.post(this.conf.url, { body, encoding: 'json' })
+    return { data: data.body }
   }
 
-  async fetchServerConf () {
+  async fetchConf () {
     this.serverConf = (await this.sendCommand('config-get', ['dhcp4'])).data[0].arguments.Dhcp4
     this.subnets = this.serverConf.subnet4
   }
