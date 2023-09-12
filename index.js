@@ -12,11 +12,6 @@ class KEAFacility extends BaseFacility {
     super.init()
   }
 
-  setNetFac (netFac) {
-    this.netFac = netFac
-    this.fetchConf()
-  }
-
   async sendCommand (command, service, args = undefined) {
     const body = {
       command,
