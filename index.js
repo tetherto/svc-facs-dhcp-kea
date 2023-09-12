@@ -81,11 +81,6 @@ class KEAFacility extends BaseFacility {
     this.leases = res.map((val) => ({ mac: val['hw-address'], ip: val['ip-address'], subnetId: val['subnet-id'] }))
   }
 
-  async getLeases () {
-    await this.fetchLeases()
-    return this.leases
-  }
-
   async setLeases (leases) {
     const args = leases.map(lease => ({ 'ip-address': lease.ip, 'hw-address': lease.mac, 'subnet-id': lease.subnetId }))
     const response = await this.sendMultipleCommands('lease4-add', ['dhcp4'], args)
@@ -114,13 +109,14 @@ class KEAFacility extends BaseFacility {
   }
 
   async getAvailableIp (subnetId) {
-    const leases = await this.getLeases()
+    
     const subnet = this.subnets.find((val) => val.id === subnetId)
     if (!subnet) {
       throw new Error('Invalid subnetId')
     }
 
-    const leasesInSubnet = leases.filter((val) => val.subnetId === subnetId)
+    this.fetchLeases()
+    const leasesInSubnet = this.leases.filter((val) => val.subnetId === subnetId)
     const allocatedIps = leasesInSubnet.map((val) => val.ip)
     allocatedIps.push(subnet.subnet.split('/')[0])
 
