@@ -82,6 +82,7 @@ class KEAFacility extends BaseFacility {
   }
 
   async getLeases () {
+    await this.fetchLeases()
     return this.leases
   }
 
