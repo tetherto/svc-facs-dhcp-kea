@@ -13,6 +13,9 @@ class KEAFacility extends BaseFacility {
     this.leases = []
     super.init()
     this.taskQueue = new TaskQueue(1)
+    if (!this.caller.http_c0) {
+      throw new Error('NET_FAC_NOT_CONFIGURED')
+    }
   }
 
   async _prepareLeases () {
@@ -27,7 +30,7 @@ class KEAFacility extends BaseFacility {
   }
 
   async sendCommand (command, service, args = undefined) {
-    if (!this.netFac || !this.caller[this.netFac]) {
+    if (!this.caller.http_c0) {
       throw new Error('NET_FAC_NOT_CONFIGURED')
     }
     const body = {
@@ -37,7 +40,7 @@ class KEAFacility extends BaseFacility {
     if (args) {
       body.arguments = args
     }
-    const data = await this.caller[this.netFac].post(this.conf.url, { body, encoding: 'json' })
+    const data = await this.caller.http_c0.post(this.conf.url, { body, encoding: 'json' })
     return { data: data.body }
   }
 
