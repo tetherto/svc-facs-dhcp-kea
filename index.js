@@ -71,17 +71,16 @@ class KEAFacility extends BaseFacility {
     return this.taskQueue.pushTask(async () => {
       try {
         const response = await request.process()
-        delete request.process
         return {
           success: true,
-          request,
-          response
+          ...request.payload,
+          ...(request.respKey ? { [request.respKey]: response } : {})
+
         }
       } catch (error) {
-        delete request.process
         return {
           success: false,
-          request,
+          ...request.payload,
           error: error.message
         }
       }
@@ -280,7 +279,8 @@ class KEAFacility extends BaseFacility {
     for (let i = 0; i < reqs.length; i++) {
       const req = reqs[i]
       res.push(this._addJob({
-        mac: req.mac,
+        payload: { mac: req.mac },
+        respKey: 'ip',
         process: async () => {
           return await this._setIp(req, true)
         }
@@ -292,13 +292,18 @@ class KEAFacility extends BaseFacility {
   async setIp ({ mac, subnet }, retry = false) {
     await this._prepareLeases()
     const response = await this._addJob({
-      mac,
+      payload: { mac },
+      respKey: 'ip',
       process: async () => {
         return await this._setIp({ mac, subnet })
       }
     })
     if (!retry || response.success) {
-      return response
+      if (response.success) {
+        return response.ip
+      } else {
+        throw new Error(response.error)
+      }
     }
     await this._prepareLeases()
     return this.setIp({ mac, subnet })
@@ -307,13 +312,17 @@ class KEAFacility extends BaseFacility {
   async releaseIp ({ ip }, retry = false) {
     await this._prepareLeases()
     const response = await this._addJob({
-      ip,
+      payload: { ip },
       process: async () => {
         return await this._releaseIp({ ip })
       }
     })
     if (!retry || response.success) {
-      return response
+      if (response.success) {
+        return 1
+      } else {
+        throw new Error(response.error)
+      }
     }
     await this._prepareLeases()
     return this.releaseIp({ ip })
@@ -330,7 +339,7 @@ class KEAFacility extends BaseFacility {
     for (let i = 0; i < reqs.length; i++) {
       const req = reqs[i]
       res.push(this._addJob({
-        ip: req.ip,
+        payload: { ip: req.ip },
         process: async () => {
           return await this._releaseIp(req, true)
         }
