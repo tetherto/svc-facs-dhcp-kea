@@ -73,14 +73,14 @@ class KEAFacility extends BaseFacility {
         const response = await request.process()
         return {
           success: true,
-          ...request.payload,
-          ...(request.respKey ? { [request.respKey]: response } : {})
+          request: request.payload,
+          response: (request.respKey ? { [request.respKey]: response } : {})
 
         }
       } catch (error) {
         return {
           success: false,
-          ...request.payload,
+          request: request.payload,
           error: error.message
         }
       }
@@ -286,23 +286,23 @@ class KEAFacility extends BaseFacility {
         }
       }))
     }
-    return (await Promise.allSettled(res)).map(r => r.value)
+    return (await Promise.allSettled(res)).map(r => ({ success: r.value.success, mac: r.value.request.mac, ip: r.value.response, error: r.value.error }))
   }
 
   async setIp ({ mac, subnet }, retry = false) {
     await this._prepareLeases()
-    const response = await this._addJob({
+    const jobStatus = await this._addJob({
       payload: { mac },
       respKey: 'ip',
       process: async () => {
         return await this._setIp({ mac, subnet })
       }
     })
-    if (!retry || response.success) {
-      if (response.success) {
-        return response.ip
+    if (!retry || jobStatus.success) {
+      if (jobStatus.success) {
+        return jobStatus.response.ip
       } else {
-        throw new Error(response.error)
+        throw new Error(jobStatus.error)
       }
     }
     await this._prepareLeases()
@@ -311,17 +311,17 @@ class KEAFacility extends BaseFacility {
 
   async releaseIp ({ ip }, retry = false) {
     await this._prepareLeases()
-    const response = await this._addJob({
+    const jobStatus = await this._addJob({
       payload: { ip },
       process: async () => {
         return await this._releaseIp({ ip })
       }
     })
-    if (!retry || response.success) {
-      if (response.success) {
+    if (!retry || jobStatus.success) {
+      if (jobStatus.success) {
         return 1
       } else {
-        throw new Error(response.error)
+        throw new Error(jobStatus.error)
       }
     }
     await this._prepareLeases()
@@ -345,7 +345,7 @@ class KEAFacility extends BaseFacility {
         }
       }))
     }
-    return (await Promise.allSettled(res)).map(r => r.value)
+    return (await Promise.allSettled(res)).map(r => ({ success: r.value.success, ip: r.value.request.ip, error: r.value.error }))
   }
 }
 
