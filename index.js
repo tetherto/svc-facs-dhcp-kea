@@ -1,8 +1,9 @@
 'use strict'
 
 const BaseFacility = require('bfx-facs-base')
-const axios = require('axios').default
 const async = require('async')
+const { TaskQueue } = require('@bitfinex/lib-js-util-task-queue')
+const debug = require('debug')('facs:kea')
 
 class KEAFacility extends BaseFacility {
   constructor (caller, opts, ctx) {
@@ -11,10 +12,21 @@ class KEAFacility extends BaseFacility {
     this._hasConf = true
     this.leases = []
     super.init()
-    this.fetchServerConf()
+    this.taskQueue = new TaskQueue(1)
+
+    if (!this.opts.netFac) {
+      throw new Error('NET_FAC_NOT_CONFIGURED')
+    }
   }
 
-  sendCommand (command, service, args = undefined) {
+  async _prepareLeases () {
+    if (this.taskQueue.queue.idle()) {
+      await this.fetchConf()
+      await this.fetchLeases()
+    }
+  }
+
+  async sendCommand (command, service, args = undefined) {
     const body = {
       command,
       service
@@ -22,10 +34,11 @@ class KEAFacility extends BaseFacility {
     if (args) {
       body.arguments = args
     }
-    return axios.post(this.conf.url, body)
+    const data = await this.opts.netFac.post(this.conf.url, { body, encoding: 'json' })
+    return { data: data.body }
   }
 
-  async fetchServerConf () {
+  async fetchConf () {
     this.serverConf = (await this.sendCommand('config-get', ['dhcp4'])).data[0].arguments.Dhcp4
     this.subnets = this.serverConf.subnet4
   }
@@ -52,6 +65,26 @@ class KEAFacility extends BaseFacility {
     }
     ), maxParallel)
     return responses
+  }
+
+  _addJob (request) {
+    return this.taskQueue.pushTask(async () => {
+      try {
+        const response = await request.process()
+        return {
+          success: true,
+          request: request.payload,
+          response: (request.respKey ? { [request.respKey]: response } : {})
+
+        }
+      } catch (error) {
+        return {
+          success: false,
+          request: request.payload,
+          error: error.message
+        }
+      }
+    })
   }
 
   async _lease4GetAll () {
@@ -82,10 +115,6 @@ class KEAFacility extends BaseFacility {
     this.leases = res.map((val) => ({ mac: val['hw-address'], ip: val['ip-address'], subnetId: val['subnet-id'] }))
   }
 
-  async getLeases () {
-    return this.leases
-  }
-
   async setLeases (leases) {
     const args = leases.map(lease => ({ 'ip-address': lease.ip, 'hw-address': lease.mac, 'subnet-id': lease.subnetId }))
     const response = await this.sendMultipleCommands('lease4-add', ['dhcp4'], args)
@@ -114,13 +143,13 @@ class KEAFacility extends BaseFacility {
   }
 
   async getAvailableIp (subnetId) {
-    const leases = await this.getLeases()
     const subnet = this.subnets.find((val) => val.id === subnetId)
     if (!subnet) {
       throw new Error('Invalid subnetId')
     }
 
-    const leasesInSubnet = leases.filter((val) => val.subnetId === subnetId)
+    this.fetchLeases()
+    const leasesInSubnet = this.leases.filter((val) => val.subnetId === subnetId)
     const allocatedIps = leasesInSubnet.map((val) => val.ip)
     allocatedIps.push(subnet.subnet.split('/')[0])
 
@@ -182,6 +211,141 @@ class KEAFacility extends BaseFacility {
       }
     }
     return true
+  }
+
+  async _setIp ({ mac, subnet }) {
+    debug('setIp', mac, subnet)
+    if (!mac || !subnet) {
+      throw new Error('ERR_MAC_AND_SUBNET_REQUIRED')
+    }
+    const subnetId = await this.getSubnetId(subnet)
+    debug('subnetId', subnetId)
+    if (!subnetId) {
+      debug('subnet not found', subnet)
+      throw new Error('ERR_SUBNET_NOT_FOUND')
+    }
+    const lease = this.leases.find(l => l.mac.toLowerCase() === mac.toLowerCase())
+    debug('lease', lease)
+    if (lease) {
+      debug('lease found')
+      if (lease.subnetId !== subnetId) {
+        debug('ERR_IN_ANOTHER_SUBNET', lease.subnetId, subnetId)
+        throw new Error('ERR_IN_ANOTHER_SUBNET')
+      }
+      await this.setLeases([{
+        ip: lease.ip,
+        mac,
+        subnetId
+      }])
+      debug('returning lease.ip', lease.ip)
+      return lease.ip
+    }
+
+    const ip = await this.getAvailableIp(subnetId)
+    if (!ip) {
+      debug('ERR_NO_AVAILABLE_IP')
+      throw new Error('ERR_NO_AVAILABLE_IP')
+    }
+    debug('ip found', ip)
+    await this.setLeases([{
+      ip,
+      mac,
+      subnetId
+    }])
+    return ip
+  }
+
+  async _releaseIp ({ ip }) {
+    debug('releaseIp', ip)
+    if (!ip) {
+      debug('ERR_IP_REQUIRED')
+      throw new Error('ERR_IP_REQUIRED')
+    }
+    const lease = this.leases.find(l => l.ip === ip)
+    if (!lease) {
+      throw new Error('ERR_IP_NOT_FOUND')
+    }
+    debug('lease found', lease)
+    await this.freeLeases([{
+      ip: lease.ip,
+      mac: lease.mac
+    }])
+    return 1
+  }
+
+  async setIps (reqs) {
+    await this._prepareLeases()
+    const res = []
+    for (let i = 0; i < reqs.length; i++) {
+      const req = reqs[i]
+      res.push(this._addJob({
+        payload: { mac: req.mac },
+        respKey: 'ip',
+        process: async () => {
+          return await this._setIp(req, true)
+        }
+      }))
+    }
+    return (await Promise.allSettled(res)).map(r => ({ success: r.value.success, mac: r.value.request.mac, ip: r.value.response, error: r.value.error }))
+  }
+
+  async setIp ({ mac, subnet }, retry = false) {
+    await this._prepareLeases()
+    const jobStatus = await this._addJob({
+      payload: { mac },
+      respKey: 'ip',
+      process: async () => {
+        return await this._setIp({ mac, subnet })
+      }
+    })
+    if (!retry || jobStatus.success) {
+      if (jobStatus.success) {
+        return jobStatus.response.ip
+      } else {
+        throw new Error(jobStatus.error)
+      }
+    }
+    await this._prepareLeases()
+    return this.setIp({ mac, subnet })
+  }
+
+  async releaseIp ({ ip }, retry = false) {
+    await this._prepareLeases()
+    const jobStatus = await this._addJob({
+      payload: { ip },
+      process: async () => {
+        return await this._releaseIp({ ip })
+      }
+    })
+    if (!retry || jobStatus.success) {
+      if (jobStatus.success) {
+        return 1
+      } else {
+        throw new Error(jobStatus.error)
+      }
+    }
+    await this._prepareLeases()
+    return this.releaseIp({ ip })
+  }
+
+  async getLeases () {
+    await this._prepareLeases()
+    return await this.leases.map((val) => ({ mac: val.mac, ip: val.ip }))
+  }
+
+  async releaseIps (reqs) {
+    await this._prepareLeases()
+    const res = []
+    for (let i = 0; i < reqs.length; i++) {
+      const req = reqs[i]
+      res.push(this._addJob({
+        payload: { ip: req.ip },
+        process: async () => {
+          return await this._releaseIp(req, true)
+        }
+      }))
+    }
+    return (await Promise.allSettled(res)).map(r => ({ success: r.value.success, ip: r.value.request.ip, error: r.value.error }))
   }
 }
 
