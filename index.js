@@ -27,9 +27,6 @@ class KEAFacility extends BaseFacility {
   }
 
   async sendCommand (command, service, args = undefined) {
-    if (!this.opts.netFac) {
-      throw new Error('NET_FAC_NOT_CONFIGURED')
-    }
     const body = {
       command,
       service
