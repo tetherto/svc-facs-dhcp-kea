@@ -14,9 +14,11 @@ class KEAFacility extends BaseFacility {
     super.init()
     this.taskQueue = new TaskQueue(1)
 
-    if (!this.opts.netFac) {
-      throw new Error('NET_FAC_NOT_CONFIGURED')
+    if (!this.opts.http_cli) {
+      throw new Error('ERR_FAC_HTTP_NOTFOUND')
     }
+
+    this.http_cli = this.opts.http_cli
   }
 
   async _prepareLeases () {
@@ -34,7 +36,7 @@ class KEAFacility extends BaseFacility {
     if (args) {
       body.arguments = args
     }
-    const data = await this.opts.netFac.post(this.conf.url, { body, encoding: 'json' })
+    const data = await this.http_cli.post(this.conf.url, { body, encoding: 'json' })
     return { data: data.body }
   }
 
