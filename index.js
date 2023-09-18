@@ -14,11 +14,11 @@ class KEAFacility extends BaseFacility {
     super.init()
     this.taskQueue = new TaskQueue(1)
 
-    if (!this.opts.http_cli) {
+    if (!this.opts.fac_http) {
       throw new Error('ERR_FAC_HTTP_NOTFOUND')
     }
 
-    this.http_cli = this.opts.http_cli
+    this.fac_http = this.opts.fac_http
   }
 
   async _prepareLeases () {
@@ -36,7 +36,7 @@ class KEAFacility extends BaseFacility {
     if (args) {
       body.arguments = args
     }
-    const data = await this.http_cli.post(this.conf.url, { body, encoding: 'json' })
+    const data = await this.fac_http.post(this.conf.url, { body, encoding: 'json' })
     return { data: data.body }
   }
 
