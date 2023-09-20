@@ -114,6 +114,7 @@ class KEAFacility extends BaseFacility {
 
   async fetchLeases () {
     const res = await this._lease4GetAll()
+    this.rawLeases = res
     this.leases = res.map((val) => ({ mac: val['hw-address'], ip: val['ip-address'], subnetId: val['subnet-id'] }))
   }
 
@@ -257,6 +258,49 @@ class KEAFacility extends BaseFacility {
     return ip
   }
 
+  async _assignIp ({ mac, ip, subnetId }) {
+    debug('assignIp', mac, ip, subnetId)
+    if (!mac || !ip || !subnetId) {
+      throw new Error('ERR_MAC_AND_IP_AND_SUBNETID_REQUIRED')
+    }
+    const subnet = this.subnets.find(s => s.id === subnetId)
+    if (!subnet) {
+      throw new Error('ERR_SUBNET_NOT_FOUND')
+    }
+    const lease = this.leases.find(l => l.mac.toLowerCase() === mac.toLowerCase())
+    if (lease) {
+      if (lease.ip !== ip) {
+        throw new Error('ERR_IP_NOT_MATCH')
+      }
+      if (lease.subnetId !== subnetId) {
+        throw new Error('ERR_IN_ANOTHER_SUBNET')
+      }
+      return ip
+    }
+    await this.setLeases([{
+      ip,
+      mac,
+      subnetId
+    }])
+    return ip
+  }
+
+  async _assignIps (reqs) {
+    await this._prepareLeases()
+    const res = []
+    for (let i = 0; i < reqs.length; i++) {
+      const req = reqs[i]
+      res.push(this._addJob({
+        payload: { mac: req.mac, ip: req.ip, subnetId: req.subnetId },
+        respKey: 'ip',
+        process: async () => {
+          return await this._assignIp(req, true)
+        }
+      }))
+    }
+    return (await Promise.allSettled(res)).map(r => ({ success: r.value.success, mac: r.value.request.mac, ip: r.value.response, error: r.value.error }))
+  }
+
   async _releaseIp ({ ip }) {
     debug('releaseIp', ip)
     if (!ip) {
@@ -348,6 +392,21 @@ class KEAFacility extends BaseFacility {
       }))
     }
     return (await Promise.allSettled(res)).map(r => ({ success: r.value.success, ip: r.value.request.ip, error: r.value.error }))
+  }
+
+  async getConfigWithLeases () {
+    await this._prepareLeases()
+    return {
+      config: this.serverConf,
+      leases: this.rawLeases.map(val => ({
+        subnet: this.subnets.find(subnet => subnet.id === val['subnet-id']).subnet,
+        ...val
+      }))
+    }
+  }
+
+  async importDhcpLeases (req) {
+    return await this._assignIps(req)
   }
 }
 
