@@ -399,8 +399,9 @@ class KEAFacility extends BaseFacility {
     return {
       config: this.serverConf,
       leases: this.rawLeases.map(val => ({
-        subnet: this.subnets.find(subnet => subnet.id === val['subnet-id']).subnet,
-        ...val
+        'ip-address': val['ip-address'],
+        'hw-address': val['hw-address'],
+        'subnet-id': val['subnet-id']
       }))
     }
   }
