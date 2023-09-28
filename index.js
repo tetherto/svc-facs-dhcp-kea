@@ -8,12 +8,11 @@ const debug = require('debug')('facs:kea')
 class KEAFacility extends BaseFacility {
   constructor (caller, opts, ctx) {
     super(caller, opts, ctx)
+    
     this.name = 'kea'
-
     this._hasConf = true
-
     this.leases = []
-
+    
     super.init()
 
     this.taskQueue = new TaskQueue(1)
@@ -43,13 +42,11 @@ class KEAFacility extends BaseFacility {
     }
 
     const data = await this.fac_http.post(this.conf.url, { body, encoding: 'json' })
-
     return { data: data.body }
   }
 
   async fetchConf () {
     this.serverConf = (await this.sendCommand('config-get', ['dhcp4'])).data[0].arguments.Dhcp4
-
     this.subnets = this.serverConf.subnet4
   }
 
@@ -89,9 +86,9 @@ class KEAFacility extends BaseFacility {
           success: true,
           request: request.payload,
           response: (request.respKey ? { [request.respKey]: response } : {})
-
         }
       } catch (error) {
+        
         return {
           success: false,
           request: request.payload,
@@ -118,7 +115,6 @@ class KEAFacility extends BaseFacility {
   async _lease4set () {
     try {
       const res = await this.sendCommand('lease4-get-all', ['dhcp4'])
-
       return res.data[0].arguments.leases
     } catch (error) {
       console.error(error)
@@ -132,7 +128,6 @@ class KEAFacility extends BaseFacility {
 
   async setLeases (leases) {
     const args = leases.map(lease => ({ 'ip-address': lease.ip, 'hw-address': lease.mac, 'subnet-id': lease.subnetId }))
-
     const response = await this.sendMultipleCommands('lease4-add', ['dhcp4'], args)
 
     response.success.forEach((res) => {
@@ -145,7 +140,6 @@ class KEAFacility extends BaseFacility {
 
   async freeLeases (leases) {
     const args = leases.map(lease => ({ 'ip-address': lease.ip, 'hw-address': lease.mac }))
-
     const response = await this.sendMultipleCommands('lease4-del', ['dhcp4'], args)
 
     response.success.forEach((res) => {
@@ -176,7 +170,6 @@ class KEAFacility extends BaseFacility {
     const leasesInSubnet = this.leases.filter((val) => val.subnetId === subnetId)
     const allocatedIps = leasesInSubnet.map((val) => val.ip)
     allocatedIps.push(subnet.subnet.split('/')[0])
-
     const ipRange = this.getIpsInSubnet(subnet.subnet, subnet.pools)
     const availableIps = ipRange.filter((val) => !allocatedIps.includes(val))
 
@@ -192,9 +185,7 @@ class KEAFacility extends BaseFacility {
     const ipParts = subnet.split('.').map(Number)
 
     const prefix = parseInt(prefixLength, 10)
-
     const subnetNumeric = (ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3]
-
     const numAddresses = 2 ** (32 - prefix)
     const networkNumeric = subnetNumeric & ((2 ** 32 - 1) << (32 - prefix))
 
@@ -228,7 +219,6 @@ class KEAFacility extends BaseFacility {
 
   isIpInPool (ip, pool) {
     const [startIP, endIP] = pool.split('-')
-
     const startIPArray = startIP.split('.').map(Number)
     const endIPArray = endIP.split('.').map(Number)
     const ipArray = ip.split('.').map(Number)
@@ -274,7 +264,7 @@ class KEAFacility extends BaseFacility {
         subnetId
       }])
       debug('returning lease.ip', lease.ip)
-
+      
       return lease.ip
     }
 
