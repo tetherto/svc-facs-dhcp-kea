@@ -394,19 +394,16 @@ class KEAFacility extends BaseFacility {
     return (await Promise.allSettled(res)).map(r => ({ success: r.value.success, ip: r.value.request.ip, error: r.value.error }))
   }
 
-  async getConfigWithLeases () {
+  async exportLeases () {
     await this._prepareLeases()
-    return {
-      config: this.serverConf,
-      leases: this.rawLeases.map(val => ({
-        'ip-address': val['ip-address'],
-        'hw-address': val['hw-address'],
-        'subnet-id': val['subnet-id']
-      }))
-    }
+    return this.rawLeases.map(val => ({
+      'ip-address': val['ip-address'],
+      'hw-address': val['hw-address'],
+      'subnet-id': val['subnet-id']
+    }))
   }
 
-  async importDhcpLeases (req) {
+  async importLeases (req) {
     return await this._assignIps(req)
   }
 }
