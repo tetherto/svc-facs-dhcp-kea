@@ -8,11 +8,11 @@ const debug = require('debug')('facs:kea')
 class KEAFacility extends BaseFacility {
   constructor (caller, opts, ctx) {
     super(caller, opts, ctx)
-    
+
     this.name = 'kea'
     this._hasConf = true
     this.leases = []
-    
+
     super.init()
 
     this.taskQueue = new TaskQueue(1)
@@ -88,7 +88,6 @@ class KEAFacility extends BaseFacility {
           response: (request.respKey ? { [request.respKey]: response } : {})
         }
       } catch (error) {
-        
         return {
           success: false,
           request: request.payload,
@@ -264,7 +263,7 @@ class KEAFacility extends BaseFacility {
         subnetId
       }])
       debug('returning lease.ip', lease.ip)
-      
+
       return lease.ip
     }
 
