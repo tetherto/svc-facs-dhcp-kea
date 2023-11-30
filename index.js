@@ -256,9 +256,7 @@ class KEAFacility extends BaseFacility {
       }
 
       await this._releaseIp({ ip: lease.ip })
-    }
-
-    if (lease && lease.subnetId === subnetId) {
+    } else if (lease && lease.subnetId === subnetId) {
       debug('lease found')
 
       await this.setLeases([{
