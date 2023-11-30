@@ -231,8 +231,8 @@ class KEAFacility extends BaseFacility {
     return true
   }
 
-  async _setIp ({ mac, subnet }) {
-    debug('setIp', mac, subnet)
+  async _setIp ({ mac, subnet, forceSetIp = false }) {
+    debug('setIp', mac, subnet, forceSetIp)
 
     if (!mac || !subnet) {
       throw new Error('ERR_MAC_AND_SUBNET_REQUIRED')
@@ -249,13 +249,17 @@ class KEAFacility extends BaseFacility {
     const lease = this.leases.find(l => l.mac.toLowerCase() === mac.toLowerCase())
     debug('lease', lease)
 
-    if (lease) {
-      debug('lease found')
-
-      if (lease.subnetId !== subnetId) {
+    if (lease && lease.subnetId !== subnetId) {
+      if (!forceSetIp) {
         debug('ERR_IN_ANOTHER_SUBNET', lease.subnetId, subnetId)
         throw new Error('ERR_IN_ANOTHER_SUBNET')
       }
+
+      await this._releaseIp({ ip: lease.ip })
+    }
+
+    if (lease && lease.subnetId === subnetId) {
+      debug('lease found')
 
       await this.setLeases([{
         ip: lease.ip,
@@ -376,14 +380,14 @@ class KEAFacility extends BaseFacility {
     return (await Promise.allSettled(res)).map(r => ({ success: r.value.success, mac: r.value.request.mac, ip: r.value.response, error: r.value.error }))
   }
 
-  async setIp ({ mac, subnet }, retry = false) {
+  async setIp ({ mac, subnet, forceSetIp = false }, retry = false) {
     await this._prepareLeases()
 
     const jobStatus = await this._addJob({
       payload: { mac },
       respKey: 'ip',
       process: async () => {
-        return await this._setIp({ mac, subnet })
+        return await this._setIp({ mac, subnet, forceSetIp })
       }
     })
 
@@ -397,7 +401,7 @@ class KEAFacility extends BaseFacility {
 
     await this._prepareLeases()
 
-    return this.setIp({ mac, subnet })
+    return this.setIp({ mac, subnet, forceSetIp })
   }
 
   async releaseIp ({ ip }, retry = false) {
