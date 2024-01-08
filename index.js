@@ -249,8 +249,16 @@ class KEAFacility extends BaseFacility {
     const lease = this.leases.find(l => l.mac.toLowerCase() === mac.toLowerCase() && l.subnetId === subnetId)
     debug('lease', lease)
 
+    const otherSubnetLeases = this.leases.filter(l => l.mac.toLowerCase() === mac.toLowerCase() && l.subnetId !== subnetId)
+    debug('otherSubnetLeases', otherSubnetLeases)
+
     if (lease) {
       debug('lease found')
+
+      // release ips on other subnets
+      if (otherSubnetLeases.length > 0 && forceSetIp) {
+        await this._releaseIpsForLeases(otherSubnetLeases)
+      }
 
       await this.setLeases([{
         ip: lease.ip,
@@ -262,12 +270,9 @@ class KEAFacility extends BaseFacility {
       return lease.ip
     }
 
-    const leaseOtherSubnet = this.leases.find(l => l.mac.toLowerCase() === mac.toLowerCase() && l.subnetId !== subnetId)
-    debug('leaseOtherSubnet', leaseOtherSubnet)
-
-    if (leaseOtherSubnet) {
+    if (otherSubnetLeases.length > 0) {
       if (!forceSetIp) {
-        debug('ERR_IN_ANOTHER_SUBNET', leaseOtherSubnet.subnetId, subnetId)
+        debug('ERR_IN_ANOTHER_SUBNET', otherSubnetLeases, subnetId)
         throw new Error('ERR_IN_ANOTHER_SUBNET')
       }
 
@@ -293,6 +298,10 @@ class KEAFacility extends BaseFacility {
 
   async _releaseAllIpsForMac (mac) {
     const leases = this.leases.filter(l => l.mac.toLowerCase() === mac.toLowerCase())
+    await this._releaseIpsForLeases(leases)
+  }
+
+  async _releaseIpsForLeases (leases) {
     for (const lease of leases) {
       await this._releaseIp({ ip: lease.ip })
     }
