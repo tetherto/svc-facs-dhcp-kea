@@ -6,7 +6,7 @@ const KEAFacility = require('../index')
 
 const createFacility = () => {
   const fac = new KEAFacility(
-    { ctx: { root: path.join(__dirname, '..') } },
+    { ctx: { root: path.join(__dirname) } },
     { fac_http: { post: async () => ({ body: [] }) }, ns: 'kea' },
     { env: 'test' }
   )
