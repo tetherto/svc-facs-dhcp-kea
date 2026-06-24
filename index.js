@@ -1,6 +1,6 @@
 'use strict'
 
-const BaseFacility = require('bfx-facs-base')
+const BaseFacility = require('@bitfinex/bfx-facs-base')
 const async = require('async')
 const { TaskQueue } = require('@bitfinex/lib-js-util-task-queue')
 const debug = require('debug')('facs:kea')

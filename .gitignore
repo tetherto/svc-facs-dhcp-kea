@@ -1,2 +1,6 @@
 node_modules
-*lock.json
+*.swp
+*.swo
+.DS_Store
+npm-debug.log
+coverage
