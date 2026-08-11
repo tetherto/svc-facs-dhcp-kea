@@ -164,7 +164,7 @@ class KEAFacility extends BaseFacility {
       throw new Error('Invalid subnetId')
     }
 
-    this.fetchLeases()
+    await this.fetchLeases()
 
     const leasesInSubnet = this.leases.filter((val) => val.subnetId === subnetId)
     const allocatedIps = leasesInSubnet.map((val) => val.ip)
@@ -287,11 +287,16 @@ class KEAFacility extends BaseFacility {
     }
     debug('ip found', ip)
 
-    await this.setLeases([{
+    const res = await this.setLeases([{
       ip,
       mac,
       subnetId
     }])
+
+    if (res.error.length > 0) {
+      debug('ERR_IP_ALLOCATION_FAILED', ip, res.error)
+      throw new Error('ERR_IP_ALLOCATION_FAILED')
+    }
 
     return ip
   }
