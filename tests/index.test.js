@@ -209,6 +209,37 @@ test('getAvailableIp - throws when all pool IPs are allocated', async t => {
   await t.exception(() => fac.getAvailableIp(1), { message: 'No available ip' })
 })
 
+test('getAvailableIp - refreshes leases from kea before choosing an ip', async t => {
+  const fac = createFacility()
+  fac.subnets = [{ id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.15' }] }]
+  fac.leases = []
+  fac.fetchLeases = async () => {
+    await new Promise(resolve => setImmediate(resolve))
+    fac.leases = [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '192.168.1.10', subnetId: 1 }]
+  }
+
+  const ip = await fac.getAvailableIp(1)
+
+  t.is(fac.leases.length, 1)
+  t.is(ip, '192.168.1.11')
+})
+
+test('getAvailableIp - does not hand out an ip already leased to another mac', async t => {
+  const fac = createFacility()
+  fac.subnets = [{ id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.15' }] }]
+  fac.leases = []
+  const kea = [
+    { mac: 'aa:bb:cc:dd:ee:ff', ip: '192.168.1.10', subnetId: 1 },
+    { mac: '11:22:33:44:55:66', ip: '192.168.1.11', subnetId: 1 }
+  ]
+  fac.fetchLeases = async () => {
+    await new Promise(resolve => setImmediate(resolve))
+    fac.leases = kea.slice()
+  }
+
+  t.is(await fac.getAvailableIp(1), '192.168.1.12')
+})
+
 // ---------------------------------------------------------------------------
 // _releaseIp
 // ---------------------------------------------------------------------------
@@ -303,6 +334,16 @@ test('_setIp - assigns new IP for mac with no existing lease', async t => {
 
   const ip = await fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24' })
   t.is(ip, '192.168.1.10')
+})
+
+test('_setIp - throws ERR_IP_ALLOCATION_FAILED when the lease add for a new ip fails', async t => {
+  const fac = createFacility()
+  fac.subnets = [{ id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.20' }] }]
+  fac.leases = []
+  fac.getAvailableIp = async () => '192.168.1.10'
+  fac.setLeases = async () => ({ success: [], error: [{ index: 0, res: { result: 1 } }] })
+
+  await t.exception(() => fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24' }), { message: 'ERR_IP_ALLOCATION_FAILED' })
 })
 
 test('_setIp - releases other subnet leases when forceSetIp set and lease exists in target subnet', async t => {
