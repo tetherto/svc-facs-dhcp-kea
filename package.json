@@ -1,6 +1,6 @@
 {
     "name": "@tetherto/svc-facs-dhcp-kea",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "kea facility for interacting with kea dhcp server",
     "main": "index.js",
     "scripts": {
