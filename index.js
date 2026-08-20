@@ -173,7 +173,7 @@ class KEAFacility extends BaseFacility {
     const availableIps = ipRange.filter((val) => !allocatedIps.includes(val))
 
     if (availableIps.length === 0) {
-      throw new Error('No available ip')
+      throw new Error('ERR_NO_AVAILABLE_IP')
     }
 
     return availableIps[0]
@@ -280,11 +280,6 @@ class KEAFacility extends BaseFacility {
     }
 
     const ip = await this.getAvailableIp(subnetId)
-
-    if (!ip) {
-      debug('ERR_NO_AVAILABLE_IP')
-      throw new Error('ERR_NO_AVAILABLE_IP')
-    }
     debug('ip found', ip)
 
     const res = await this.setLeases([{
