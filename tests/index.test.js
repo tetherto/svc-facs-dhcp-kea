@@ -312,17 +312,112 @@ test('_setIp - releases other subnet leases and assigns new IP when forceSetIp i
   ]
   fac.leases = [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '10.0.0.10', subnetId: 2 }]
 
-  let releasedMac = null
-  fac._releaseAllIpsForMac = async (mac) => {
-    releasedMac = mac
-    fac.leases = fac.leases.filter(l => l.mac.toLowerCase() !== mac.toLowerCase())
+  const calls = []
+  fac._releaseIp = async ({ ip }) => {
+    calls.push(['release', ip])
+    fac.leases = fac.leases.filter(l => l.ip !== ip)
   }
+  fac.getAvailableIp = async () => '192.168.1.10'
+  fac.setLeases = async (leases) => {
+    calls.push(['add', leases[0].ip])
+    return { success: [], error: [] }
+  }
+
+  const ip = await fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24', forceSetIp: true })
+  t.is(ip, '192.168.1.10')
+  t.alike(calls, [['add', '192.168.1.10'], ['release', '10.0.0.10']], 'new lease added before old lease released')
+})
+
+test('_setIp - keeps old lease when allocation in target subnet fails with forceSetIp', async t => {
+  const fac = createFacility()
+  fac.subnets = [
+    { id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.20' }] },
+    { id: 2, subnet: '10.0.0.0/24', pools: [] }
+  ]
+  fac.leases = [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '10.0.0.10', subnetId: 2 }]
+
+  let released = false
+  fac._releaseIp = async () => { released = true }
+  fac.getAvailableIp = async () => { throw new Error('No available ip') }
+
+  await t.exception(
+    () => fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24', forceSetIp: true }),
+    { message: 'No available ip' }
+  )
+  t.absent(released, 'old subnet lease is not released when allocation fails')
+})
+
+test('_setIp - keeps old lease when the new lease add fails with forceSetIp', async t => {
+  const fac = createFacility()
+  fac.subnets = [
+    { id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.20' }] },
+    { id: 2, subnet: '10.0.0.0/24', pools: [] }
+  ]
+  fac.leases = [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '10.0.0.10', subnetId: 2 }]
+
+  let released = false
+  fac._releaseIp = async () => { released = true }
+  fac.getAvailableIp = async () => '192.168.1.10'
+  fac.setLeases = async () => ({ success: [], error: [{ index: 0, res: { result: 1 } }] })
+
+  await t.exception(
+    () => fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24', forceSetIp: true }),
+    { message: 'ERR_IP_ALLOCATION_FAILED' }
+  )
+  t.absent(released, 'old subnet lease is not released when the new lease add fails')
+})
+
+test('_setIp - returns new IP when stale lease cleanup hits ERR_IP_NOT_FOUND', async t => {
+  const fac = createFacility()
+  fac.subnets = [
+    { id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.20' }] },
+    { id: 2, subnet: '10.0.0.0/24', pools: [] }
+  ]
+  fac.leases = [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '10.0.0.10', subnetId: 2 }]
+
+  fac._releaseIp = async () => { throw new Error('ERR_IP_NOT_FOUND') }
   fac.getAvailableIp = async () => '192.168.1.10'
   fac.setLeases = async () => ({ success: [], error: [] })
 
   const ip = await fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24', forceSetIp: true })
   t.is(ip, '192.168.1.10')
-  t.is(releasedMac, 'aa:bb:cc:dd:ee:ff')
+})
+
+test('_setIp - returns new IP when stale lease cleanup fails unexpectedly', async t => {
+  const fac = createFacility()
+  fac.subnets = [
+    { id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.20' }] },
+    { id: 2, subnet: '10.0.0.0/24', pools: [] }
+  ]
+  fac.leases = [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '10.0.0.10', subnetId: 2 }]
+
+  fac._releaseIp = async () => { throw new Error('ERR_KEA_UNREACHABLE') }
+  fac.getAvailableIp = async () => '192.168.1.10'
+  fac.setLeases = async () => ({ success: [], error: [] })
+
+  const ip = await fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24', forceSetIp: true })
+  t.is(ip, '192.168.1.10')
+})
+
+test('_setIp - never releases the freshly added lease during cleanup', async t => {
+  const fac = createFacility()
+  fac.subnets = [
+    { id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.20' }] },
+    { id: 2, subnet: '10.0.0.0/24', pools: [] }
+  ]
+  fac.leases = [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '10.0.0.10', subnetId: 2 }]
+
+  const releasedIps = []
+  fac._releaseIp = async ({ ip }) => { releasedIps.push(ip) }
+  fac.getAvailableIp = async () => '192.168.1.10'
+  fac.setLeases = async (leases) => {
+    fac.leases.push({ mac: leases[0].mac, ip: leases[0].ip, subnetId: leases[0].subnetId })
+    return { success: [], error: [] }
+  }
+
+  const ip = await fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24', forceSetIp: true })
+  t.is(ip, '192.168.1.10')
+  t.alike(releasedIps, ['10.0.0.10'])
 })
 
 test('_setIp - assigns new IP for mac with no existing lease', async t => {
@@ -357,11 +452,11 @@ test('_setIp - releases other subnet leases when forceSetIp set and lease exists
     { mac: 'aa:bb:cc:dd:ee:ff', ip: '10.0.0.5', subnetId: 2 }
   ]
 
-  let releasedLeases = null
-  fac._releaseIpsForLeases = async (leases) => { releasedLeases = leases }
+  const releasedIps = []
+  fac._releaseIp = async ({ ip }) => { releasedIps.push(ip) }
   fac.setLeases = async () => ({ success: [], error: [] })
 
   const ip = await fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24', forceSetIp: true })
   t.is(ip, '192.168.1.10')
-  t.alike(releasedLeases, [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '10.0.0.5', subnetId: 2 }])
+  t.alike(releasedIps, ['10.0.0.5'])
 })
