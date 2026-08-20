@@ -293,7 +293,7 @@ class KEAFacility extends BaseFacility {
       throw new Error('ERR_IP_ALLOCATION_FAILED')
     }
 
-    if (otherSubnetLeases.length > 0) {
+    if (otherSubnetLeases.length > 0 && forceSetIp) {
       await this._releaseOtherSubnetIpsForMac(mac, subnetId)
     }
 
@@ -310,7 +310,7 @@ class KEAFacility extends BaseFacility {
         await this._releaseIp({ ip: lease.ip })
       } catch (error) {
         if (error.message !== 'ERR_IP_NOT_FOUND') {
-          debug('ERR_STALE_LEASE_RELEASE_FAILED', lease.ip, error.message)
+          console.error('ERR_STALE_LEASE_RELEASE_FAILED', lease.ip, error)
         }
       }
     }
