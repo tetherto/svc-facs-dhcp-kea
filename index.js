@@ -255,28 +255,23 @@ class KEAFacility extends BaseFacility {
     if (lease) {
       debug('lease found')
 
-      // release ips on other subnets
-      if (otherSubnetLeases.length > 0 && forceSetIp) {
-        await this._releaseIpsForLeases(otherSubnetLeases)
-      }
-
       await this.setLeases([{
         ip: lease.ip,
         mac,
         subnetId
       }])
+
+      if (otherSubnetLeases.length > 0 && forceSetIp) {
+        await this._releaseOtherSubnetIpsForMac(mac, subnetId)
+      }
       debug('returning lease.ip', lease.ip)
 
       return lease.ip
     }
 
-    if (otherSubnetLeases.length > 0) {
-      if (!forceSetIp) {
-        debug('ERR_IN_ANOTHER_SUBNET', otherSubnetLeases, subnetId)
-        throw new Error('ERR_IN_ANOTHER_SUBNET')
-      }
-
-      await this._releaseAllIpsForMac(mac)
+    if (otherSubnetLeases.length > 0 && !forceSetIp) {
+      debug('ERR_IN_ANOTHER_SUBNET', otherSubnetLeases, subnetId)
+      throw new Error('ERR_IN_ANOTHER_SUBNET')
     }
 
     const ip = await this.getAvailableIp(subnetId)
@@ -298,17 +293,26 @@ class KEAFacility extends BaseFacility {
       throw new Error('ERR_IP_ALLOCATION_FAILED')
     }
 
+    if (otherSubnetLeases.length > 0) {
+      await this._releaseOtherSubnetIpsForMac(mac, subnetId)
+    }
+
     return ip
   }
 
-  async _releaseAllIpsForMac (mac) {
-    const leases = this.leases.filter(l => l.mac.toLowerCase() === mac.toLowerCase())
-    await this._releaseIpsForLeases(leases)
-  }
+  async _releaseOtherSubnetIpsForMac (mac, keepSubnetId) {
+    const staleLeases = this.leases.filter(l =>
+      l.mac && l.mac.toLowerCase() === mac.toLowerCase() && l.subnetId !== keepSubnetId
+    )
 
-  async _releaseIpsForLeases (leases) {
-    for (const lease of leases) {
-      await this._releaseIp({ ip: lease.ip })
+    for (const lease of staleLeases) {
+      try {
+        await this._releaseIp({ ip: lease.ip })
+      } catch (error) {
+        if (error.message !== 'ERR_IP_NOT_FOUND') {
+          debug('ERR_STALE_LEASE_RELEASE_FAILED', lease.ip, error.message)
+        }
+      }
     }
   }
 
