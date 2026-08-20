@@ -201,12 +201,24 @@ test('getAvailableIp - returns first unallocated IP in pool', async t => {
   t.is(await fac.getAvailableIp(1), '192.168.1.11')
 })
 
-test('getAvailableIp - throws when all pool IPs are allocated', async t => {
+test('getAvailableIp - throws ERR_NO_AVAILABLE_IP when all pool IPs are allocated', async t => {
   const fac = createFacility()
   fac.subnets = [{ id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.10' }] }]
   fac.leases = [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '192.168.1.10', subnetId: 1 }]
   fac.fetchLeases = async () => {}
-  await t.exception(() => fac.getAvailableIp(1), { message: 'No available ip' })
+  await t.exception(() => fac.getAvailableIp(1), { message: 'ERR_NO_AVAILABLE_IP' })
+})
+
+test('setIp - surfaces ERR_NO_AVAILABLE_IP to the caller when the pool is exhausted', async t => {
+  const fac = createFacility()
+  fac.subnets = [{ id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.10' }] }]
+  fac.leases = [{ mac: '11:22:33:44:55:66', ip: '192.168.1.10', subnetId: 1 }]
+  fac._prepareLeases = async () => {}
+  fac.fetchLeases = async () => {}
+  await t.exception(
+    () => fac.setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24' }),
+    { message: 'ERR_NO_AVAILABLE_IP' }
+  )
 })
 
 test('getAvailableIp - refreshes leases from kea before choosing an ip', async t => {
