@@ -161,7 +161,8 @@ class KEAFacility extends BaseFacility {
     const subnet = this.subnets.find((val) => val.id === subnetId)
 
     if (!subnet) {
-      throw new Error('Invalid subnetId')
+      debug('ERR_SUBNET_NOT_FOUND', subnetId)
+      throw new Error('ERR_SUBNET_NOT_FOUND')
     }
 
     await this.fetchLeases()
@@ -173,6 +174,7 @@ class KEAFacility extends BaseFacility {
     const availableIps = ipRange.filter((val) => !allocatedIps.includes(val))
 
     if (availableIps.length === 0) {
+      debug('ERR_NO_AVAILABLE_IP', subnetId)
       throw new Error('ERR_NO_AVAILABLE_IP')
     }
 
@@ -355,7 +357,7 @@ class KEAFacility extends BaseFacility {
         payload: { mac: req.mac, ip: req.ip, subnetId: req.subnetId },
         respKey: 'ip',
         process: async () => {
-          return await this._assignIp(req, true)
+          return await this._assignIp(req)
         }
       }))
     }
@@ -395,7 +397,7 @@ class KEAFacility extends BaseFacility {
         payload: { mac: req.mac },
         respKey: 'ip',
         process: async () => {
-          return await this._setIp(req, true)
+          return await this._setIp(req)
         }
       }))
     }
