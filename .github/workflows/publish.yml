@@ -10,7 +10,6 @@ jobs:
   tag-release:
     if: "${{ github.event.pull_request.merged == true && startsWith(github.event.pull_request.title, 'Release: ') }}"
     runs-on: ubuntu-latest
-    environment: release
     permissions:
       contents: write
     steps:
@@ -30,3 +29,18 @@ jobs:
 
           git tag "$TAG"
           git push origin "$TAG"
+
+  publish:
+    needs: tag-release
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+    name: Publish
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: holepunchto/actions/node-base@v1
+        with:
+          allow-git: all
+      - uses: holepunchto/actions/publish@v1
