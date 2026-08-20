@@ -186,11 +186,11 @@ test('freeLeases - does not remove leases that failed to delete', async t => {
 // getAvailableIp
 // ---------------------------------------------------------------------------
 
-test('getAvailableIp - throws for unknown subnetId', async t => {
+test('getAvailableIp - throws ERR_SUBNET_NOT_FOUND for unknown subnetId', async t => {
   const fac = createFacility()
   fac.subnets = [{ id: 1, subnet: '192.168.1.0/24', pools: [] }]
   fac.fetchLeases = async () => {}
-  await t.exception(() => fac.getAvailableIp(99), { message: 'Invalid subnetId' })
+  await t.exception(() => fac.getAvailableIp(99), { message: 'ERR_SUBNET_NOT_FOUND' })
 })
 
 test('getAvailableIp - returns first unallocated IP in pool', async t => {
