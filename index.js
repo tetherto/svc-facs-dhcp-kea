@@ -122,7 +122,15 @@ class KEAFacility extends BaseFacility {
 
   async fetchLeases () {
     const res = await this._lease4GetAll()
-    this.leases = res.map((val) => ({ mac: val['hw-address'], ip: val['ip-address'], subnetId: val['subnet-id'] }))
+    this.leases = res.map((val) => ({ mac: val['hw-address'] || null, ip: val['ip-address'], subnetId: val['subnet-id'] }))
+  }
+
+  _isSameMac (a, b) {
+    return !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase()
+  }
+
+  _isLeaseExistsError (err) {
+    return /already exists/i.test(err?.res?.text || '')
   }
 
   async setLeases (leases) {
@@ -131,19 +139,20 @@ class KEAFacility extends BaseFacility {
 
     response.success.forEach((res) => {
       const val = res.val
-      this.leases.push({ mac: val['hw-address'], ip: val['ip-address'], subnetId: val['subnet-id'] })
+      if (this.leases.some((lease) => lease.ip === val['ip-address'])) return
+      this.leases.push({ mac: val['hw-address'] || null, ip: val['ip-address'], subnetId: val['subnet-id'] })
     })
 
     return response
   }
 
   async freeLeases (leases) {
-    const args = leases.map(lease => ({ 'ip-address': lease.ip, 'hw-address': lease.mac }))
+    const args = leases.map(lease => ({ 'ip-address': lease.ip, ...(lease.mac ? { 'hw-address': lease.mac } : {}) }))
     const response = await this.sendMultipleCommands('lease4-del', ['dhcp4'], args)
 
     response.success.forEach((res) => {
       const val = res.val
-      this.leases = this.leases.filter((lease) => !(lease.mac === val['hw-address'] && lease.ip === val['ip-address']))
+      this.leases = this.leases.filter((lease) => lease.ip !== val['ip-address'])
     })
   }
 
@@ -161,7 +170,8 @@ class KEAFacility extends BaseFacility {
     const subnet = this.subnets.find((val) => val.id === subnetId)
 
     if (!subnet) {
-      throw new Error('Invalid subnetId')
+      debug('ERR_SUBNET_NOT_FOUND', subnetId)
+      throw new Error('ERR_SUBNET_NOT_FOUND')
     }
 
     await this.fetchLeases()
@@ -173,7 +183,8 @@ class KEAFacility extends BaseFacility {
     const availableIps = ipRange.filter((val) => !allocatedIps.includes(val))
 
     if (availableIps.length === 0) {
-      throw new Error('No available ip')
+      debug('ERR_NO_AVAILABLE_IP', subnetId)
+      throw new Error('ERR_NO_AVAILABLE_IP')
     }
 
     return availableIps[0]
@@ -246,45 +257,41 @@ class KEAFacility extends BaseFacility {
       throw new Error('ERR_SUBNET_NOT_FOUND')
     }
 
-    const lease = this.leases.find(l => l.mac.toLowerCase() === mac.toLowerCase() && l.subnetId === subnetId)
+    const lease = this.leases.find(l => this._isSameMac(l.mac, mac) && l.subnetId === subnetId)
     debug('lease', lease)
 
-    const otherSubnetLeases = this.leases.filter(l => l.mac.toLowerCase() === mac.toLowerCase() && l.subnetId !== subnetId)
+    const otherSubnetLeases = this.leases.filter(l => this._isSameMac(l.mac, mac) && l.subnetId !== subnetId)
     debug('otherSubnetLeases', otherSubnetLeases)
 
     if (lease) {
       debug('lease found')
 
-      // release ips on other subnets
-      if (otherSubnetLeases.length > 0 && forceSetIp) {
-        await this._releaseIpsForLeases(otherSubnetLeases)
-      }
-
-      await this.setLeases([{
+      const res = await this.setLeases([{
         ip: lease.ip,
         mac,
         subnetId
       }])
+
+      const failed = res.error.filter(e => !this._isLeaseExistsError(e))
+      if (failed.length > 0) {
+        debug('ERR_IP_ALLOCATION_FAILED', lease.ip, failed)
+        throw new Error('ERR_IP_ALLOCATION_FAILED')
+      }
+
+      if (otherSubnetLeases.length > 0 && forceSetIp) {
+        await this._releaseOtherSubnetIpsForMac(mac, subnetId)
+      }
       debug('returning lease.ip', lease.ip)
 
       return lease.ip
     }
 
-    if (otherSubnetLeases.length > 0) {
-      if (!forceSetIp) {
-        debug('ERR_IN_ANOTHER_SUBNET', otherSubnetLeases, subnetId)
-        throw new Error('ERR_IN_ANOTHER_SUBNET')
-      }
-
-      await this._releaseAllIpsForMac(mac)
+    if (otherSubnetLeases.length > 0 && !forceSetIp) {
+      debug('ERR_IN_ANOTHER_SUBNET', otherSubnetLeases, subnetId)
+      throw new Error('ERR_IN_ANOTHER_SUBNET')
     }
 
     const ip = await this.getAvailableIp(subnetId)
-
-    if (!ip) {
-      debug('ERR_NO_AVAILABLE_IP')
-      throw new Error('ERR_NO_AVAILABLE_IP')
-    }
     debug('ip found', ip)
 
     const res = await this.setLeases([{
@@ -298,17 +305,26 @@ class KEAFacility extends BaseFacility {
       throw new Error('ERR_IP_ALLOCATION_FAILED')
     }
 
+    if (otherSubnetLeases.length > 0 && forceSetIp) {
+      await this._releaseOtherSubnetIpsForMac(mac, subnetId)
+    }
+
     return ip
   }
 
-  async _releaseAllIpsForMac (mac) {
-    const leases = this.leases.filter(l => l.mac.toLowerCase() === mac.toLowerCase())
-    await this._releaseIpsForLeases(leases)
-  }
+  async _releaseOtherSubnetIpsForMac (mac, keepSubnetId) {
+    const staleLeases = this.leases.filter(l =>
+      this._isSameMac(l.mac, mac) && l.subnetId !== keepSubnetId
+    )
 
-  async _releaseIpsForLeases (leases) {
-    for (const lease of leases) {
-      await this._releaseIp({ ip: lease.ip })
+    for (const lease of staleLeases) {
+      try {
+        await this._releaseIp({ ip: lease.ip })
+      } catch (error) {
+        if (error.message !== 'ERR_IP_NOT_FOUND') {
+          console.error('ERR_STALE_LEASE_RELEASE_FAILED', lease.ip, error)
+        }
+      }
     }
   }
 
@@ -323,7 +339,7 @@ class KEAFacility extends BaseFacility {
       throw new Error('ERR_SUBNET_NOT_FOUND')
     }
 
-    const lease = this.leases.find(l => l.mac.toLowerCase() === mac.toLowerCase())
+    const lease = this.leases.find(l => this._isSameMac(l.mac, mac))
     if (lease) {
       if (lease.ip !== ip) {
         throw new Error('ERR_IP_NOT_MATCH')
@@ -356,7 +372,7 @@ class KEAFacility extends BaseFacility {
         payload: { mac: req.mac, ip: req.ip, subnetId: req.subnetId },
         respKey: 'ip',
         process: async () => {
-          return await this._assignIp(req, true)
+          return await this._assignIp(req)
         }
       }))
     }
@@ -396,7 +412,7 @@ class KEAFacility extends BaseFacility {
         payload: { mac: req.mac },
         respKey: 'ip',
         process: async () => {
-          return await this._setIp(req, true)
+          return await this._setIp(req)
         }
       }))
     }
