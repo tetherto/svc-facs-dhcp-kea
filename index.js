@@ -122,7 +122,11 @@ class KEAFacility extends BaseFacility {
 
   async fetchLeases () {
     const res = await this._lease4GetAll()
-    this.leases = res.map((val) => ({ mac: val['hw-address'], ip: val['ip-address'], subnetId: val['subnet-id'] }))
+    this.leases = res.map((val) => ({ mac: val['hw-address'] || null, ip: val['ip-address'], subnetId: val['subnet-id'] }))
+  }
+
+  _isSameMac (a, b) {
+    return !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase()
   }
 
   async setLeases (leases) {
@@ -138,12 +142,12 @@ class KEAFacility extends BaseFacility {
   }
 
   async freeLeases (leases) {
-    const args = leases.map(lease => ({ 'ip-address': lease.ip, 'hw-address': lease.mac }))
+    const args = leases.map(lease => ({ 'ip-address': lease.ip, ...(lease.mac ? { 'hw-address': lease.mac } : {}) }))
     const response = await this.sendMultipleCommands('lease4-del', ['dhcp4'], args)
 
     response.success.forEach((res) => {
       const val = res.val
-      this.leases = this.leases.filter((lease) => !(lease.mac === val['hw-address'] && lease.ip === val['ip-address']))
+      this.leases = this.leases.filter((lease) => lease.ip !== val['ip-address'])
     })
   }
 
@@ -248,10 +252,10 @@ class KEAFacility extends BaseFacility {
       throw new Error('ERR_SUBNET_NOT_FOUND')
     }
 
-    const lease = this.leases.find(l => l.mac.toLowerCase() === mac.toLowerCase() && l.subnetId === subnetId)
+    const lease = this.leases.find(l => this._isSameMac(l.mac, mac) && l.subnetId === subnetId)
     debug('lease', lease)
 
-    const otherSubnetLeases = this.leases.filter(l => l.mac.toLowerCase() === mac.toLowerCase() && l.subnetId !== subnetId)
+    const otherSubnetLeases = this.leases.filter(l => this._isSameMac(l.mac, mac) && l.subnetId !== subnetId)
     debug('otherSubnetLeases', otherSubnetLeases)
 
     if (lease) {
@@ -299,7 +303,7 @@ class KEAFacility extends BaseFacility {
 
   async _releaseOtherSubnetIpsForMac (mac, keepSubnetId) {
     const staleLeases = this.leases.filter(l =>
-      l.mac && l.mac.toLowerCase() === mac.toLowerCase() && l.subnetId !== keepSubnetId
+      this._isSameMac(l.mac, mac) && l.subnetId !== keepSubnetId
     )
 
     for (const lease of staleLeases) {
@@ -324,7 +328,7 @@ class KEAFacility extends BaseFacility {
       throw new Error('ERR_SUBNET_NOT_FOUND')
     }
 
-    const lease = this.leases.find(l => l.mac.toLowerCase() === mac.toLowerCase())
+    const lease = this.leases.find(l => this._isSameMac(l.mac, mac))
     if (lease) {
       if (lease.ip !== ip) {
         throw new Error('ERR_IP_NOT_MATCH')

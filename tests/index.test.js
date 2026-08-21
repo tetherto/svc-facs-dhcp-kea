@@ -472,3 +472,61 @@ test('_setIp - releases other subnet leases when forceSetIp set and lease exists
   t.is(ip, '192.168.1.10')
   t.alike(releasedIps, ['10.0.0.5'])
 })
+
+// ---------------------------------------------------------------------------
+// identity-less (declined) leases
+// ---------------------------------------------------------------------------
+
+test('fetchLeases - normalizes a missing or empty hw-address to null', async t => {
+  const fac = createFacility()
+  fac._lease4GetAll = async () => [
+    { 'ip-address': '192.168.1.10', 'subnet-id': 1 },
+    { 'hw-address': '', 'ip-address': '192.168.1.11', 'subnet-id': 1 },
+    { 'hw-address': 'aa:bb:cc:dd:ee:ff', 'ip-address': '192.168.1.12', 'subnet-id': 1 }
+  ]
+  await fac.fetchLeases()
+  t.alike(fac.leases.map(l => l.mac), [null, null, 'aa:bb:cc:dd:ee:ff'])
+})
+
+test('_setIp - ignores leases without a mac when matching', async t => {
+  const fac = createFacility()
+  fac.subnets = [{ id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.20' }] }]
+  fac.leases = [
+    { mac: null, ip: '192.168.1.10', subnetId: 1 },
+    { mac: null, ip: '10.0.0.10', subnetId: 2 }
+  ]
+  fac.getAvailableIp = async () => '192.168.1.12'
+  fac.setLeases = async () => ({ success: [], error: [] })
+  const ip = await fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24' })
+  t.is(ip, '192.168.1.12')
+})
+
+test('getAvailableIp - keeps ips of mac-less leases out of the pool', async t => {
+  const fac = createFacility()
+  fac.subnets = [{ id: 1, subnet: '192.168.1.0/24', pools: [{ pool: '192.168.1.10-192.168.1.11' }] }]
+  fac.leases = [{ mac: null, ip: '192.168.1.10', subnetId: 1 }]
+  fac.fetchLeases = async () => {}
+  t.is(await fac.getAvailableIp(1), '192.168.1.11')
+})
+
+test('_releaseIp - releases a mac-less lease by ip alone', async t => {
+  const fac = createFacility()
+  fac.leases = [{ mac: null, ip: '192.168.1.10', subnetId: 1 }]
+  let sentArgs = null
+  fac.sendMultipleCommands = async (cmd, svc, args) => {
+    sentArgs = args
+    return { success: args.map((val, index) => ({ index, res: { result: 0 }, val })), error: [] }
+  }
+  await fac._releaseIp({ ip: '192.168.1.10' })
+  t.alike(sentArgs, [{ 'ip-address': '192.168.1.10' }])
+  t.alike(fac.leases, [])
+})
+
+test('_assignIp - ignores mac-less leases when matching', async t => {
+  const fac = createFacility()
+  fac.subnets = [{ id: 1, subnet: '192.168.1.0/24', pools: [] }]
+  fac.leases = [{ mac: null, ip: '192.168.1.10', subnetId: 1 }]
+  fac.setLeases = async () => ({ success: [], error: [] })
+  const ip = await fac._assignIp({ mac: 'aa:bb:cc:dd:ee:ff', ip: '192.168.1.11', subnetId: 1 })
+  t.is(ip, '192.168.1.11')
+})
