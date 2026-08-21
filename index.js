@@ -129,13 +129,18 @@ class KEAFacility extends BaseFacility {
     return !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase()
   }
 
+  _isLeaseExistsError (err) {
+    return /already exists/i.test(err?.res?.text || '')
+  }
+
   async setLeases (leases) {
     const args = leases.map(lease => ({ 'ip-address': lease.ip, 'hw-address': lease.mac, 'subnet-id': lease.subnetId }))
     const response = await this.sendMultipleCommands('lease4-add', ['dhcp4'], args)
 
     response.success.forEach((res) => {
       const val = res.val
-      this.leases.push({ mac: val['hw-address'], ip: val['ip-address'], subnetId: val['subnet-id'] })
+      if (this.leases.some((lease) => lease.ip === val['ip-address'])) return
+      this.leases.push({ mac: val['hw-address'] || null, ip: val['ip-address'], subnetId: val['subnet-id'] })
     })
 
     return response
@@ -261,11 +266,17 @@ class KEAFacility extends BaseFacility {
     if (lease) {
       debug('lease found')
 
-      await this.setLeases([{
+      const res = await this.setLeases([{
         ip: lease.ip,
         mac,
         subnetId
       }])
+
+      const failed = res.error.filter(e => !this._isLeaseExistsError(e))
+      if (failed.length > 0) {
+        debug('ERR_IP_ALLOCATION_FAILED', lease.ip, failed)
+        throw new Error('ERR_IP_ALLOCATION_FAILED')
+      }
 
       if (otherSubnetLeases.length > 0 && forceSetIp) {
         await this._releaseOtherSubnetIpsForMac(mac, subnetId)

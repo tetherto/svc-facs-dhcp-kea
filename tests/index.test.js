@@ -530,3 +530,44 @@ test('_assignIp - ignores mac-less leases when matching', async t => {
   const ip = await fac._assignIp({ mac: 'aa:bb:cc:dd:ee:ff', ip: '192.168.1.11', subnetId: 1 })
   t.is(ip, '192.168.1.11')
 })
+
+// ---------------------------------------------------------------------------
+// existing-lease refresh error handling
+// ---------------------------------------------------------------------------
+
+test('_setIp - existing lease refresh tolerates the already-exists reply', async t => {
+  const fac = createFacility()
+  fac.subnets = [{ id: 1, subnet: '192.168.1.0/24', pools: [] }]
+  fac.leases = [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '192.168.1.10', subnetId: 1 }]
+  fac.setLeases = async () => ({
+    success: [],
+    error: [{ index: 0, res: { result: 1, text: 'IPv4 lease already exists.' } }]
+  })
+  const ip = await fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24' })
+  t.is(ip, '192.168.1.10')
+})
+
+test('_setIp - throws when the existing lease refresh fails for another reason', async t => {
+  const fac = createFacility()
+  fac.subnets = [{ id: 1, subnet: '192.168.1.0/24', pools: [] }]
+  fac.leases = [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '192.168.1.10', subnetId: 1 }]
+  fac.setLeases = async () => ({
+    success: [],
+    error: [{ index: 0, error: new Error('connect ECONNREFUSED') }]
+  })
+  await t.exception(
+    () => fac._setIp({ mac: 'aa:bb:cc:dd:ee:ff', subnet: '192.168.1.0/24' }),
+    { message: 'ERR_IP_ALLOCATION_FAILED' }
+  )
+})
+
+test('setLeases - does not duplicate a lease already in the cache', async t => {
+  const fac = createFacility()
+  fac.leases = [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '192.168.1.10', subnetId: 1 }]
+  fac.sendMultipleCommands = async (cmd, svc, args) => ({
+    success: [{ index: 0, res: { result: 0 }, val: args[0] }],
+    error: []
+  })
+  await fac.setLeases([{ ip: '192.168.1.10', mac: 'aa:bb:cc:dd:ee:ff', subnetId: 1 }])
+  t.is(fac.leases.length, 1)
+})
