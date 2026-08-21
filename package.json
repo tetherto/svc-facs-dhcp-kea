@@ -35,9 +35,10 @@
   },
   "homepage": "https://github.com/tetherto/svc-facs-dhcp-kea#readme",
   "dependencies": {
-    "@bitfinex/lib-js-util-task-queue": "git+https://github.com/bitfinexcom/lib-js-util-task-queue",
+    "@bitfinex/bfx-facs-base": "^1.1.0",
+    "@bitfinex/lib-js-util-task-queue": "^1.0.1",
     "async": "^3.2.4",
-    "@bitfinex/bfx-facs-base": "^1.1.0"
+    "debug": "^4.4.3"
   },
   "devDependencies": {
     "brittle": "^3.18.0",
