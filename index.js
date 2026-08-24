@@ -120,9 +120,13 @@ class KEAFacility extends BaseFacility {
     }
   }
 
+  _leaseFromKea (val) {
+    return { mac: val['hw-address'] || null, ip: val['ip-address'], subnetId: val['subnet-id'] }
+  }
+
   async fetchLeases () {
     const res = await this._lease4GetAll()
-    this.leases = res.map((val) => ({ mac: val['hw-address'] || null, ip: val['ip-address'], subnetId: val['subnet-id'] }))
+    this.leases = res.map((val) => this._leaseFromKea(val))
   }
 
   _isSameMac (a, b) {
@@ -130,7 +134,7 @@ class KEAFacility extends BaseFacility {
   }
 
   _isLeaseExistsError (err) {
-    return /already exists/i.test(err?.res?.text || '')
+    return /lease already exists/i.test(err?.res?.text || '')
   }
 
   async setLeases (leases) {
@@ -140,7 +144,7 @@ class KEAFacility extends BaseFacility {
     response.success.forEach((res) => {
       const val = res.val
       if (this.leases.some((lease) => lease.ip === val['ip-address'])) return
-      this.leases.push({ mac: val['hw-address'] || null, ip: val['ip-address'], subnetId: val['subnet-id'] })
+      this.leases.push(this._leaseFromKea(val))
     })
 
     return response
